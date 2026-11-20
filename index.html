@@ -1,0 +1,265 @@
+
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>L3 CLOUD PHONE</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#080914;color:#eee;font-family:Arial,sans-serif}
+header{padding:20px;background:#101124;border-bottom:1px solid #39305f}
+h1{margin:0;color:#a98aff;font-size:25px}
+header p{color:#999;margin:7px 0 0}
+main{max-width:950px;margin:25px auto;padding:15px}
+.panel{background:#121426;border:1px solid #302950;border-radius:15px;padding:20px;margin-bottom:18px}
+h2{color:#b99aff;margin-top:0}
+input,button{width:100%;padding:13px;margin:7px 0;border-radius:9px;border:1px solid #393452;background:#090b19;color:white}
+button{background:#7045db;border:0;font-weight:bold;cursor:pointer}
+button:hover{background:#895fff}
+button.red{background:#b83d55}
+button.gray{background:#34364c}
+.hidden{display:none!important}
+.muted{color:#999;font-size:13px}
+.device{padding:15px;background:#1a1c31;border:1px solid #343653;border-radius:12px;margin:10px 0}
+.device strong{color:#c4a8ff;font-size:17px}
+.device small{display:block;color:#aaa;margin-top:7px}
+.actions{display:flex;gap:8px}
+.actions button{flex:1}
+.stats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.stat{background:#1a1c31;padding:15px;border-radius:10px}
+.stat b{display:block;color:#bd9cff;font-size:23px;margin-top:8px}
+#message{padding:10px;color:#c5adff}
+@media(max-width:500px){.actions{flex-direction:column}.stats{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>☁ L3 CLOUD PHONE</h1>
+  <p>Personal Cloud Phone Dashboard</p>
+</header>
+
+<main>
+  <div id="authPanel" class="panel">
+    <h2>Đăng nhập tài khoản</h2>
+    <input id="email" type="email" placeholder="Email">
+    <input id="password" type="password" placeholder="Mật khẩu">
+    <button onclick="login()">ĐĂNG NHẬP</button>
+    <button class="gray" onclick="register()">TẠO TÀI KHOẢN</button>
+    <button class="gray" onclick="resetPassword()">QUÊN MẬT KHẨU</button>
+    <div id="message"></div>
+    <p class="muted">Đăng ký bằng email của bạn để sử dụng Cloud Phone.</p>
+  </div>
+
+  <div id="dashboard" class="hidden">
+    <div class="panel">
+      <h2>Xin chào!</h2>
+      <div id="userEmail" class="muted"></div>
+      <button class="red" onclick="logout()">ĐĂNG XUẤT</button>
+    </div>
+
+    <div class="panel">
+      <h2>Thống kê thiết bị</h2>
+      <div class="stats">
+        <div class="stat">Tổng thiết bị<b id="total">0</b></div>
+        <div class="stat">Đang hoạt động<b id="online">0</b></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>＋ Thêm thiết bị</h2>
+      <input id="deviceName" placeholder="Tên thiết bị">
+      <input id="androidVersion" placeholder="Phiên bản Android (ví dụ: Android 13)">
+      <button onclick="addDevice()">THÊM THIẾT BỊ</button>
+    </div>
+
+    <div class="panel">
+      <h2>Điện thoại của tôi</h2>
+      <div id="deviceList">Đang tải...</div>
+    </div>
+  </div>
+</main>
+
+<script>
+const SUPABASE_URL = "https://usrdzdagsrlfwrqhsyem.supabase.co";
+const SUPABASE_KEY = "sb_publishable_K1Z1r_GMRFoFNksLArW-vA_qPseQEEy";
+
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let currentUser = null;
+
+function message(text){
+  document.getElementById("message").textContent = text;
+}
+
+async function register(){
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+
+  if(!email || password.length < 6){
+    message("Nhập email và mật khẩu ít nhất 6 ký tự.");
+    return;
+  }
+
+  const {error} = await db.auth.signUp({email,password});
+
+  if(error) return message(error.message);
+  message("Đăng ký thành công. Kiểm tra email nếu hệ thống yêu cầu xác nhận.");
+}
+
+async function login(){
+  const email = document.getElementById("email").value.trim();
+  const password = document.getElementById("password").value;
+
+  const {error} = await db.auth.signInWithPassword({email,password});
+
+  if(error) return message(error.message);
+}
+
+async function resetPassword(){
+  const email = document.getElementById("email").value.trim();
+  if(!email) return message("Nhập email trước.");
+
+  const {error} = await db.auth.resetPasswordForEmail(email);
+
+  message(error ? error.message : "Đã gửi hướng dẫn đặt lại mật khẩu nếu email hợp lệ.");
+}
+
+async function logout(){
+  await db.auth.signOut();
+}
+
+function showDashboard(user){
+  currentUser = user;
+  document.getElementById("authPanel").classList.add("hidden");
+  document.getElementById("dashboard").classList.remove("hidden");
+  document.getElementById("userEmail").textContent = user.email || "";
+  loadDevices();
+}
+
+function showLogin(){
+  currentUser = null;
+  document.getElementById("dashboard").classList.add("hidden");
+  document.getElementById("authPanel").classList.remove("hidden");
+}
+
+async function loadDevices(){
+  if(!currentUser) return;
+
+  const list = document.getElementById("deviceList");
+  list.textContent = "Đang tải...";
+
+  const {data,error} = await db
+    .from("devices")
+    .select("*")
+    .order("created_at",{ascending:false});
+
+  if(error){
+    list.textContent = "Lỗi tải thiết bị: " + error.message;
+    return;
+  }
+
+  document.getElementById("total").textContent = data.length;
+  document.getElementById("online").textContent =
+    data.filter(d => d.status === "online").length;
+
+  list.innerHTML = "";
+
+  if(data.length === 0){
+    list.textContent = "Bạn chưa thêm thiết bị nào.";
+    return;
+  }
+
+  data.forEach(device => {
+    const card = document.createElement("div");
+    card.className = "device";
+
+    const title = document.createElement("strong");
+    title.textContent = device.name || "Thiết bị";
+
+    const version = document.createElement("small");
+    version.textContent = device.android_version || "Chưa có phiên bản Android";
+
+    const status = document.createElement("small");
+    status.textContent = "Trạng thái: " +
+      (device.status === "online" ? "Online" : "Offline");
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+
+    const rename = document.createElement("button");
+    rename.className = "gray";
+    rename.textContent = "Đổi tên";
+    rename.onclick = () => renameDevice(device.id,device.name);
+
+    const remove = document.createElement("button");
+    remove.className = "red";
+    remove.textContent = "Xóa";
+    remove.onclick = () => deleteDevice(device.id);
+
+    actions.append(rename,remove);
+    card.append(title,version,status,actions);
+    list.appendChild(card);
+  });
+}
+
+async function addDevice(){
+  if(!currentUser) return;
+
+  const name = document.getElementById("deviceName").value.trim();
+  const version = document.getElementById("androidVersion").value.trim();
+
+  if(!name) return alert("Nhập tên thiết bị.");
+
+  const {error} = await db.from("devices").insert({
+    user_id: currentUser.id,
+    name: name,
+    android_version: version,
+    status: "offline"
+  });
+
+  if(error) return alert("Không thể thêm: " + error.message);
+
+  document.getElementById("deviceName").value = "";
+  document.getElementById("androidVersion").value = "";
+  loadDevices();
+}
+
+async function renameDevice(id,oldName){
+  const name = prompt("Nhập tên mới:",oldName);
+  if(!name || !name.trim()) return;
+
+  const {error} = await db.from("devices")
+    .update({name:name.trim()})
+    .eq("id",id);
+
+  if(error) return alert(error.message);
+  loadDevices();
+}
+
+async function deleteDevice(id){
+  if(!confirm("Bạn muốn xóa thiết bị này?")) return;
+
+  const {error} = await db.from("devices")
+    .delete()
+    .eq("id",id);
+
+  if(error) return alert(error.message);
+  loadDevices();
+}
+
+db.auth.onAuthStateChange((event,session) => {
+  setTimeout(() => {
+    if(session?.user) showDashboard(session.user);
+    else showLogin();
+  },0);
+});
+
+db.auth.getSession().then(({data}) => {
+  if(data.session?.user) showDashboard(data.session.user);
+  else showLogin();
+});
+</script>
+</body>
+</html>
